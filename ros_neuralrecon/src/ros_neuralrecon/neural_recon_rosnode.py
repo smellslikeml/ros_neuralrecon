@@ -243,9 +243,9 @@ class NeuralReconNode:
                 outputs, loss_dict = self.model(sample)
                 if self.cfg.SAVE_SCENE_MESH or self.cfg.SAVE_INCREMENTAL:
                     self.save_mesh_scene(outputs, sample, self.epoch_idx)
-                if 'coords' in outputs.keys():
-                    rospy.loginfo(str(outputs['coords'][0]))
-                    rospy.loginfo(str(outputs['tsdf'][0]))
+                if "coords" in outputs.keys():
+                    rospy.loginfo(str(outputs["coords"][0]))
+                    rospy.loginfo(str(outputs["tsdf"][0]))
 
             rospy.loginfo("updated scene")
 
@@ -264,7 +264,7 @@ class NeuralReconNode:
 if __name__ == "__main__":
     from neuralrecon.config import cfg, update_config
 
-    #cfg.VIS_INCREMENTAL = True
+    # cfg.VIS_INCREMENTAL = True
     cfg.SAVE_INCREMENTAL = True
     print(cfg)
     ros_node = NeuralReconNode(cfg=cfg)

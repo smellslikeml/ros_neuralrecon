@@ -9,7 +9,7 @@ from std_msgs.msg import Float64MultiArray
 
 class TestRosNeuralRecon(unittest.TestCase):
     """
-    TODO: build test 
+    TODO: build test
 
     Run instructions:
         python3 test_reid.py
@@ -22,7 +22,7 @@ class TestRosNeuralRecon(unittest.TestCase):
 
     def test_from_ros(self):
         # TODO: Design actual test
-        self.assertEqual(1,1)
+        self.assertEqual(1, 1)
 
 
 if __name__ == "__main__":
