@@ -23,7 +23,7 @@ from ros_neuralrecon_msgs.msg import SparseTSDF
 import torch
 
 from neuralrecon.models import NeuralRecon
-from neuralrecon.utils import SaveScene
+from neuralrecon.datasets.transforms import get_view_frustum, rigid_transform
 from transforms3d.quaternions import axangle2quat, quat2mat
 
 
@@ -36,33 +36,6 @@ def rotate_view_to_align_xyplane(Tr_camera_to_world):
     quat = axangle2quat(axis, theta)
     rotation_matrix = quat2mat(quat)
     return rotation_matrix
-
-
-def rigid_transform(xyz, transform):
-    """Applies a rigid transform to an (N, 3) pointcloud."""
-    xyz_h = torch.cat([xyz, torch.ones((len(xyz), 1))], dim=1)
-    xyz_t_h = (transform @ xyz_h.T).T
-    return xyz_t_h[:, :3]
-
-
-def get_view_frustum(max_depth, size, cam_intr, cam_pose):
-    """Get corners of 3D camera view frustum of depth image"""
-    im_h, im_w = size
-    im_h = int(im_h)
-    im_w = int(im_w)
-    view_frust_pts = torch.stack(
-        [
-            (torch.tensor([0, 0, 0, im_w, im_w]) - cam_intr[0, 2])
-            * torch.tensor([0, max_depth, max_depth, max_depth, max_depth])
-            / cam_intr[0, 0],
-            (torch.tensor([0, 0, im_h, 0, im_h]) - cam_intr[1, 2])
-            * torch.tensor([0, max_depth, max_depth, max_depth, max_depth])
-            / cam_intr[1, 1],
-            torch.tensor([0, max_depth, max_depth, max_depth, max_depth]),
-        ]
-    )
-    view_frust_pts = rigid_transform(view_frust_pts.T, cam_pose).T
-    return view_frust_pts
 
 
 class NeuralReconNode:
@@ -88,12 +61,8 @@ class NeuralReconNode:
         self.cy = self.FRAME_WIDTH // 2
 
         self.rate = rospy.Rate(rate)
-        # self.rate.sleep()
 
-        # TODO: message type to publish/viz output tsdf mesh?
-        # self.tsdf = rospy.Publisher(
-        #    "tsdf", Twist, queue_size=1
-        # )
+        self.tsdf = rospy.Publisher("tsdf", SparseTSDF, queue_size=1)
 
         self.model = NeuralRecon(self.cfg).cuda().eval()
         self.model = torch.nn.DataParallel(self.model, device_ids=[0])
@@ -107,7 +76,6 @@ class NeuralReconNode:
         state_dict = torch.load(loadckpt)
         self.epoch_idx = state_dict["epoch"]
         self.model.load_state_dict(state_dict["model"], strict=False)
-        self.save_mesh_scene = SaveScene(self.cfg)
 
         sync_list = []
         img_sub = message_filters.Subscriber(
@@ -220,8 +188,6 @@ class NeuralReconNode:
                 np.array([0, 0, 0])
             )
 
-            #################
-
             sample = {
                 "imgs": img_tensor[None, :, :, :, :],
                 "intrinsics": torch.from_numpy(np.stack(intrinsics)),
@@ -234,20 +200,32 @@ class NeuralReconNode:
                 "fragment": ["ignore" + "_" + str(self.fragment_id)],
                 "epoch": torch.from_numpy(np.array([0])),
                 "vol_origin": torch.from_numpy(np.array([0, 0, 0])),
-                "vol_origin_partial": vol_origin_partial,  # torch.from_numpy(np.array([0, 0, 0])),
+                "vol_origin_partial": vol_origin_partial,
             }
 
             self.fragment_id += 1
-            # Generate Sample Dict & Run NeuralRecon
             with torch.no_grad():
                 outputs, loss_dict = self.model(sample)
-                if self.cfg.SAVE_SCENE_MESH or self.cfg.SAVE_INCREMENTAL:
-                    self.save_mesh_scene(outputs, sample, self.epoch_idx)
                 if "coords" in outputs.keys():
-                    rospy.loginfo(str(outputs["coords"][0]))
-                    rospy.loginfo(str(outputs["tsdf"][0]))
+                    tsdf = SparseTSDF()
+                    tsdf.header = Header()
+                    tsdf.size_x = cfg.MODEL.VOXEL_SIZE
+                    tsdf.size_y = cfg.MODEL.VOXEL_SIZE
+                    tsdf.size_z = cfg.MODEL.VOXEL_SIZE
+                    tsdf.num_voxels_x = cfg.MODEL.N_VOX[0]
+                    tsdf.num_voxels_y = cfg.MODEL.N_VOX[1]
+                    tsdf.num_voxels_z = cfg.MODEL.N_VOX[2]
+                    tsdf.truncation_dist = 3
+                    tsdf.max_weight = 3
+                    tsdf.pose = self.poses[0].pose.pose
 
-            rospy.loginfo("updated scene")
+                    tsdf.data = outputs["tsdf"].tolist()
+                    tsdf.rows = outputs["coords"][:, 1].tolist()
+                    tsdf.cols = outputs["coords"][:, 2].tolist()
+                    tsdf.sheets = outputs["coords"][:, 3].tolist()
+                    self.tsdf.publish(tsdf)
+
+                rospy.loginfo("updated scene")
 
             self.images = deque(maxlen=self.qlen)
             self.poses = deque(maxlen=self.qlen)
@@ -256,7 +234,6 @@ class NeuralReconNode:
 
     def shutdown(self):
         rospy.loginfo("Shutting down neural recon")
-        self.save_mesh_scene.close()
         rospy.signal_shutdown("Shutdown all threads")
         sys.exit(0)
 
@@ -267,7 +244,6 @@ if __name__ == "__main__":
 
     rp = rospkg.RosPack()
     cfg.LOGDIR = os.path.join(rp.get_path("ros_neuralrecon"), "checkpoints")
-    cfg.SAVE_INCREMENTAL = True
     cfg.MODEL.BACKBONE2D.ARC = rospy.get_param("/ros_neuralrecon/arc")
     cfg.MODEL.FUSION.FUSION_ON = bool(rospy.get_param("/ros_neuralrecon/fusion_on"))
 
