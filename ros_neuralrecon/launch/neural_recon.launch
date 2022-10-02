@@ -1,6 +1,13 @@
 <launch>
+
+    <arg name="arc" default="fpn-mnas-1"/>
+    <arg name="fusion_on" default="True"/>
+
     <node name="ros_neuralrecon" pkg="ros_neuralrecon"
           type="neural_recon_rosnode.py" required="true">
+      <param name="arc" value="$(arg arc)" />
+      <param name="fusion_on" value="$(arg fusion_on)" />
     </node>
+
 </launch>
 

@@ -262,11 +262,15 @@ class NeuralReconNode:
 
 
 if __name__ == "__main__":
+    import os, rospkg
     from neuralrecon.config import cfg, update_config
 
-    # cfg.VIS_INCREMENTAL = True
+    rp = rospkg.RosPack()
+    cfg.LOGDIR = os.path.join(rp.get_path("ros_neuralrecon"), "checkpoints")
     cfg.SAVE_INCREMENTAL = True
-    print(cfg)
+    cfg.MODEL.BACKBONE2D.ARC = rospy.get_param('/ros_neuralrecon/arc')
+    cfg.MODEL.FUSION.FUSION_ON= bool(rospy.get_param('/ros_neuralrecon/fusion_on'))
+
     ros_node = NeuralReconNode(cfg=cfg)
     rospy.on_shutdown(ros_node.shutdown)
     rospy.spin()
